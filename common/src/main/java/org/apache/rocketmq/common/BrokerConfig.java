@@ -26,6 +26,13 @@ import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/**
+ * 一个Topic 拥有多个消息队列，
+ * 一个Broker为每一个主题默认创建4个读队列，4个写队列。
+ * 多个Broker组成一个集群，BrokerName 由相同的多台Broker 组成的Master-Slaver架构，
+ * brokerId 为0 代表Master，大于0 表示Slave。
+ * {@link org.apache.rocketmq.namesrv.routeinfo.BrokerLiveInfo#lastUpdateTimestamp}用于存储上次收到Broker 心跳包的时间
+ */
 public class BrokerConfig {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.COMMON_LOGGER_NAME);
 

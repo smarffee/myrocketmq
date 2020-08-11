@@ -38,19 +38,30 @@ import org.apache.rocketmq.remoting.netty.NettyServerConfig;
 import org.apache.rocketmq.remoting.netty.TlsSystemConfig;
 import org.apache.rocketmq.srvutil.FileWatchService;
 
-
+/**
+ * 是 NameServer 核心控制器
+ */
 public class NamesrvController {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
 
+    //业务配置参数
     private final NamesrvConfig namesrvConfig;
 
+    //NettyServer配置参数
     private final NettyServerConfig nettyServerConfig;
 
+    //定时任务1：NameServer 每个10s 扫描一次Broker，移除处于不激活状态的Broker
+    //定时任务2：NameServer 每隔10分钟打印一次KV 配置
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl(
         "NSScheduledThread"));
+
+    //KV配置
     private final KVConfigManager kvConfigManager;
+
+    //路由实现类
     private final RouteInfoManager routeInfoManager;
 
+    //NettyServer 网络处理对象
     private RemotingServer remotingServer;
 
     private BrokerHousekeepingService brokerHousekeepingService;
@@ -73,10 +84,12 @@ public class NamesrvController {
         this.configuration.setStorePathFromConfig(this.namesrvConfig, "configStorePath");
     }
 
+    //NamesrvController 实例的初始化
     public boolean initialize() {
-
+        //1. 加载KV 配置
         this.kvConfigManager.load();
 
+        //2. 创建NettyServer 网络处理对象。
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
         this.remotingExecutor =
@@ -84,6 +97,7 @@ public class NamesrvController {
 
         this.registerProcessor();
 
+        //定时任务1：NameServer 每个10s 扫描一次Broker，移除处于不激活状态的Broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -92,6 +106,7 @@ public class NamesrvController {
             }
         }, 5, 10, TimeUnit.SECONDS);
 
+        //定时任务2：NameServer 每隔10分钟打印一次KV 配置
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override

@@ -41,6 +41,10 @@ import org.apache.rocketmq.srvutil.ServerUtil;
 import org.apache.rocketmq.srvutil.ShutdownHookThread;
 import org.slf4j.LoggerFactory;
 
+/**
+ * NameServer 主要作用是为生产者和消费者提供关于主题Topic 的路由信息，
+ * 那么NameServer 需要存储路由的基础信息，还能够管理Broker 节点，包括路由注册、路由删除等功能。
+ */
 public class NamesrvStartup {
 
     private static InternalLogger log;
@@ -54,8 +58,15 @@ public class NamesrvStartup {
     public static NamesrvController main0(String[] args) {
 
         try {
+            /**
+             * 1. 读取配置
+             * 2. 根据配置创建 NamesrvController 实例。 NamesrvController 实例是 NameServer 核心控制器
+             */
             NamesrvController controller = createNamesrvController(args);
+
+            //启动 NamesrvController
             start(controller);
+
             String tip = "The Name Server boot success. serializeType=" + RemotingCommand.getSerializeTypeConfigInThisServer();
             log.info(tip);
             System.out.printf("%s%n", tip);
@@ -123,6 +134,7 @@ public class NamesrvStartup {
         MixAll.printObjectProperties(log, namesrvConfig);
         MixAll.printObjectProperties(log, nettyServerConfig);
 
+        //根据config 创建 NamesrvController 实例，
         final NamesrvController controller = new NamesrvController(namesrvConfig, nettyServerConfig);
 
         // remember all configs to prevent discard
@@ -131,18 +143,29 @@ public class NamesrvStartup {
         return controller;
     }
 
+    /**
+     * NamesrvController 启动
+     *
+     * @param controller
+     * @return
+     * @throws Exception
+     */
     public static NamesrvController start(final NamesrvController controller) throws Exception {
 
         if (null == controller) {
             throw new IllegalArgumentException("NamesrvController is null");
         }
 
+        //初始化
         boolean initResult = controller.initialize();
+
+        //如果没有初始化成功，则进行关闭动作
         if (!initResult) {
             controller.shutdown();
             System.exit(-3);
         }
 
+        //注册JVM钩子函数，如果JVM退出，则执行关闭动作
         Runtime.getRuntime().addShutdownHook(new ShutdownHookThread(log, new Callable<Void>() {
             @Override
             public Void call() throws Exception {
@@ -151,6 +174,7 @@ public class NamesrvStartup {
             }
         }));
 
+        //开始启动
         controller.start();
 
         return controller;

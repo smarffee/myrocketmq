@@ -107,6 +107,14 @@ import org.apache.rocketmq.store.dledger.DLedgerCommitLog;
 import org.apache.rocketmq.store.stats.BrokerStats;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+
+/**
+ * 一个Topic 拥有多个消息队列，
+ * 一个Broker为每一个主题默认创建4个读队列，4个写队列。
+ * 多个Broker组成一个集群，BrokerName 由相同的多台Broker 组成的Master-Slaver架构，
+ * brokerId 为0 代表Master，大于0 表示Slave。
+ * {@link org.apache.rocketmq.namesrv.routeinfo.BrokerLiveInfo#lastUpdateTimestamp}用于存储上次收到Broker 心跳包的时间
+ */
 public class BrokerController {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
     private static final InternalLogger LOG_PROTECTION = InternalLoggerFactory.getLogger(LoggerName.PROTECTION_LOGGER_NAME);
@@ -887,6 +895,14 @@ public class BrokerController {
             this.registerBrokerAll(true, false, true);
         }
 
+        //发送心跳包
+        /**
+         * RocketMQ 路由注册是通过 Broker 与 NameServer 的心跳功能实现的。
+         * Broker 启动时，向集群中所有的NameServer 发送心跳语句，每隔30s 向集群中所有的 NameServer发送心跳包，
+         * NameServer 收到 Broker 心跳包时，会更新{@link org.apache.rocketmq.namesrv.routeinfo.BrokerLiveInfo#lastUpdateTimestamp},
+         * 然后 NameServer 每隔10s 扫描brokerLiveTable，如果连续120s 没有收到心跳包，
+         * NameServer 将移除该 Broker 的路由信息同时关闭 socket 连接。
+         */
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -928,6 +944,13 @@ public class BrokerController {
         doRegisterBrokerAll(true, false, topicConfigSerializeWrapper);
     }
 
+    /**
+     * broker 注册，发送心跳包
+     *
+     * @param checkOrderConfig
+     * @param oneway
+     * @param forceRegister
+     */
     public synchronized void registerBrokerAll(final boolean checkOrderConfig, boolean oneway, boolean forceRegister) {
         TopicConfigSerializeWrapper topicConfigWrapper = this.getTopicConfigManager().buildTopicConfigSerializeWrapper();
 

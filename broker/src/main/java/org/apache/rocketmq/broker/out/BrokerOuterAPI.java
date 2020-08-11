@@ -63,6 +63,8 @@ public class BrokerOuterAPI {
     private final RemotingClient remotingClient;
     private final TopAddressing topAddressing = new TopAddressing(MixAll.getWSAddr());
     private String nameSrvAddr = null;
+
+    //Broker 异步注册到 NameServer 线程池
     private BrokerFixedThreadPoolExecutor brokerOuterExecutor = new BrokerFixedThreadPoolExecutor(4, 10, 1, TimeUnit.MINUTES,
         new ArrayBlockingQueue<Runnable>(32), new ThreadFactoryImpl("brokerOutApi_thread_", true));
 
@@ -111,6 +113,24 @@ public class BrokerOuterAPI {
         this.remotingClient.updateNameServerAddressList(lst);
     }
 
+    /**
+     * Broker 向 NameServer 中注册发送心跳包
+     *
+     * NameServer 处理心跳包:
+     * {@link org.apache.rocketmq.namesrv.routeinfo.RouteInfoManager#registerBroker(java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, org.apache.rocketmq.common.protocol.body.TopicConfigSerializeWrapper, java.util.List, io.netty.channel.Channel)}
+     *
+     * @param clusterName
+     * @param brokerAddr
+     * @param brokerName
+     * @param brokerId
+     * @param haServerAddr
+     * @param topicConfigWrapper
+     * @param filterServerList
+     * @param oneway
+     * @param timeoutMills
+     * @param compressed
+     * @return
+     */
     public List<RegisterBrokerResult> registerBrokerAll(
         final String clusterName,
         final String brokerAddr,
@@ -123,30 +143,52 @@ public class BrokerOuterAPI {
         final int timeoutMills,
         final boolean compressed) {
 
+        //broker 注册结果列表
         final List<RegisterBrokerResult> registerBrokerResultList = Lists.newArrayList();
+
+        //获取所有的 NameServer 地址列表
         List<String> nameServerAddressList = this.remotingClient.getNameServerAddressList();
+
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
 
             final RegisterBrokerRequestHeader requestHeader = new RegisterBrokerRequestHeader();
+
+            //broker 地址
             requestHeader.setBrokerAddr(brokerAddr);
+
+            //0:master ; 大于0:slave
             requestHeader.setBrokerId(brokerId);
+
+            //broker名称
             requestHeader.setBrokerName(brokerName);
+
+            //集群名称
             requestHeader.setClusterName(clusterName);
+
+            //master地址，初次请求时该值为空，slave向 NameServer 注册时返回。
             requestHeader.setHaServerAddr(haServerAddr);
+
             requestHeader.setCompressed(compressed);
 
             RegisterBrokerBody requestBody = new RegisterBrokerBody();
+            //主题配置，
             requestBody.setTopicConfigSerializeWrapper(topicConfigWrapper);
+            //消息过滤服务器列表
             requestBody.setFilterServerList(filterServerList);
+
             final byte[] body = requestBody.encode(compressed);
             final int bodyCrc32 = UtilAll.crc32(body);
             requestHeader.setBodyCrc32(bodyCrc32);
+
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
+
+            //遍历 NameServer 地址列表
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
+                            //注册 broker
                             RegisterBrokerResult result = registerBroker(namesrvAddr,oneway, timeoutMills,requestHeader,body);
                             if (result != null) {
                                 registerBrokerResultList.add(result);
@@ -171,8 +213,9 @@ public class BrokerOuterAPI {
         return registerBrokerResultList;
     }
 
+    //注册 broker（发送心跳包）
     private RegisterBrokerResult registerBroker(
-        final String namesrvAddr,
+        final String namesrvAddr, //要注册的NameServer 地址
         final boolean oneway,
         final int timeoutMills,
         final RegisterBrokerRequestHeader requestHeader,

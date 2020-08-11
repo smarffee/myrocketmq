@@ -16,17 +16,37 @@
  */
 package org.apache.rocketmq.remoting.netty;
 
+/**
+ * NameServer 网络配置参数
+ */
 public class NettyServerConfig implements Cloneable {
+
+    //NameServer 默认监听端口，该值默认是9876
     private int listenPort = 8888;
+
+    //Netty 业务线程池线程个数
     private int serverWorkerThreads = 8;
+
+    //
     private int serverCallbackExecutorThreads = 0;
     private int serverSelectorThreads = 3;
+
+    //send oneway 消息请求并发度（Broker端参数）
     private int serverOnewaySemaphoreValue = 256;
+
+    //异步消息发送最大并发度（Broker端参数）
     private int serverAsyncSemaphoreValue = 64;
+
+    //网络连接最大空闲时间，默认120s。如果连接空闲时间超过该参数设置的值，连接将被关闭。
     private int serverChannelMaxIdleTimeSeconds = 120;
 
+    //网络socket 发送缓冲区大小，默认64K
     private int serverSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+
+    //网络socket 接受缓冲区大小，默认64K
     private int serverSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
+
+    //是否启用Epoll IO模型，Linux环境建议启用
     private boolean serverPooledByteBufAllocatorEnable = true;
 
     /**
