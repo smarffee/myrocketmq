@@ -171,6 +171,10 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         log.info("register sendMessage Hook, {}", hook.hookName());
     }
 
+    /**
+     * 消息生产者启动流程
+     * @throws MQClientException
+     */
     public void start() throws MQClientException {
         this.start(true);
     }
@@ -180,15 +184,19 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             case CREATE_JUST:
                 this.serviceState = ServiceState.START_FAILED;
 
+                //1. 检查 productGroup 是否符合要求；
                 this.checkConfig();
-
                 if (!this.defaultMQProducer.getProducerGroup().equals(MixAll.CLIENT_INNER_PRODUCER_GROUP)) {
+                    //改变生产者 instanceName 为进程ID
                     this.defaultMQProducer.changeInstanceNameToPID();
                 }
 
+                //2. 创建MQClientInstance实例
                 this.mQClientFactory = MQClientManager.getInstance().getOrCreateMQClientInstance(this.defaultMQProducer, rpcHook);
 
+                //3. 向 MQClientInstance 注册，将当前生产者加入到 MQClientInstance 管理中，方便后续调用网络请求，进行心跳检测
                 boolean registerOK = mQClientFactory.registerProducer(this.defaultMQProducer.getProducerGroup(), this);
+
                 if (!registerOK) {
                     this.serviceState = ServiceState.CREATE_JUST;
                     throw new MQClientException("The producer group[" + this.defaultMQProducer.getProducerGroup()
@@ -198,12 +206,14 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
                 this.topicPublishInfoTable.put(this.defaultMQProducer.getCreateTopicKey(), new TopicPublishInfo());
 
+                //4. 启动MQClientInstance。如果MQClientInstance 已经启动，则本次启动不会真正执行
                 if (startFactory) {
                     mQClientFactory.start();
                 }
 
                 log.info("the producer [{}] start OK. sendMessageWithVIPChannel={}", this.defaultMQProducer.getProducerGroup(),
                     this.defaultMQProducer.isSendMessageWithVIPChannel());
+
                 this.serviceState = ServiceState.RUNNING;
                 break;
             case RUNNING:
@@ -549,12 +559,25 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final long timeout
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         this.makeSureStateOK();
+
+        /**
+         * 1. 验证消息
+         * 消息发送之前，首先确保生产者处于运行状态，然后验证消息是否符合相应的规范，
+         * 具体的规范要求是：
+         * 主题名称、消息体不能为空；
+         * 消息长度不能为0 且 默认不能超过允许发送的最大长度4M {@link DefaultMQProducer#maxMessageSize}
+         */
         Validators.checkMessage(msg, this.defaultMQProducer);
+
+
         final long invokeID = random.nextLong();
         long beginTimestampFirst = System.currentTimeMillis();
         long beginTimestampPrev = beginTimestampFirst;
         long endTimestamp = beginTimestampFirst;
+
+        //2. 获取主题的路由信息，只有获取了这些信息我们才知道消息要发送到具体的 Broker 节点。
         TopicPublishInfo topicPublishInfo = this.tryToFindTopicPublishInfo(msg.getTopic());
+
         if (topicPublishInfo != null && topicPublishInfo.ok()) {
             boolean callTimeout = false;
             MessageQueue mq = null;
@@ -682,14 +705,19 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
         validateNameServerSetting();
 
+        //如果没有找到topicPublishInfo 则抛异常
         throw new MQClientException("No route info of this topic: " + msg.getTopic() + FAQUrl.suggestTodo(FAQUrl.NO_TOPIC_ROUTE_INFO),
             null).setResponseCode(ClientErrorCode.NOT_FOUND_TOPIC_EXCEPTION);
     }
 
+    //获取主题的路由信息，只有获取了这些信息我们才知道消息要发送到具体的 Broker 节点。
     private TopicPublishInfo tryToFindTopicPublishInfo(final String topic) {
+        //先从缓存中找
         TopicPublishInfo topicPublishInfo = this.topicPublishInfoTable.get(topic);
+        //缓存中没有找到，或者没有包含消息队列
         if (null == topicPublishInfo || !topicPublishInfo.ok()) {
             this.topicPublishInfoTable.putIfAbsent(topic, new TopicPublishInfo());
+            //向NameServer 查询该 topic 的路由信息
             this.mQClientFactory.updateTopicRouteInfoFromNameServer(topic);
             topicPublishInfo = this.topicPublishInfoTable.get(topic);
         }

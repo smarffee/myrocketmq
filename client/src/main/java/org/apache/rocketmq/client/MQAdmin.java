@@ -38,11 +38,12 @@ public interface MQAdmin {
 
     /**
      * Creates an topic
+     * 创建主题
      *
-     * @param key accesskey
-     * @param newTopic topic name
-     * @param queueNum topic's queue number
-     * @param topicSysFlag topic system flag
+     * @param key accesskey 目前未实际作用，可以与 newTopic 相同
+     * @param newTopic topic name 主题名称
+     * @param queueNum topic's queue number 队列数量
+     * @param topicSysFlag topic system flag 主题系统标签，默认为0
      */
     void createTopic(String key, String newTopic, int queueNum, int topicSysFlag)
         throws MQClientException;
@@ -50,6 +51,8 @@ public interface MQAdmin {
     /**
      * Gets the message queue offset according to some time in milliseconds<br>
      * be cautious to call because of more IO overhead
+     *
+     * 根据时间戳从队列中查找其偏移量
      *
      * @param mq Instance of MessageQueue
      * @param timestamp from when in milliseconds.
@@ -59,6 +62,8 @@ public interface MQAdmin {
 
     /**
      * Gets the max offset
+     *
+     * 查找该消息队列中最大的物理偏移量
      *
      * @param mq Instance of MessageQueue
      * @return the max offset
