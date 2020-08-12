@@ -25,18 +25,28 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 
 public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> {
+
     private final ConcurrentHashMap<String, FaultItem> faultItemTable = new ConcurrentHashMap<String, FaultItem>(16);
 
     private final ThreadLocalIndex whichItemWorst = new ThreadLocalIndex();
 
+    /**
+     * 更新失败条目
+     * @param name brokerName
+     * @param currentLatency 消息发送故障延迟时间
+     * @param notAvailableDuration broker不可用持续时长，在这个时间内，Broker将被规避
+     */
     @Override
     public void updateFaultItem(final String name, final long currentLatency, final long notAvailableDuration) {
+        //先根据 brokerName 从缓存中取失败条目
         FaultItem old = this.faultItemTable.get(name);
         if (null == old) {
+            //如果缓存中不存在则创建
             final FaultItem faultItem = new FaultItem(name);
             faultItem.setCurrentLatency(currentLatency);
             faultItem.setStartTimestamp(System.currentTimeMillis() + notAvailableDuration);
 
+            //放到缓存中
             old = this.faultItemTable.putIfAbsent(name, faultItem);
             if (old != null) {
                 old.setCurrentLatency(currentLatency);
@@ -48,6 +58,7 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
         }
     }
 
+    //判断Broker 是否可用
     @Override
     public boolean isAvailable(final String name) {
         final FaultItem faultItem = this.faultItemTable.get(name);
@@ -57,11 +68,13 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
         return true;
     }
 
+    //移除Fault 条目，意味着Broker 重新参与路由计算
     @Override
     public void remove(final String name) {
         this.faultItemTable.remove(name);
     }
 
+    //尝试从规避中的Broker 中选择一个可用Broker，如果没有找到，将返回null
     @Override
     public String pickOneAtLeast() {
         final Enumeration<FaultItem> elements = this.faultItemTable.elements();
@@ -96,9 +109,23 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
             '}';
     }
 
+    /**
+     * 失败条目（规避规则条目）
+     */
     class FaultItem implements Comparable<FaultItem> {
+        /**
+         * 条目唯一键，这里是brokerName
+         */
         private final String name;
+
+        /**
+         * 本次消息发送延迟
+         */
         private volatile long currentLatency;
+
+        /**
+         * 故障规避开始时间（当前系统时间 + 不可用规避时间）
+         */
         private volatile long startTimestamp;
 
         public FaultItem(final String name) {
@@ -131,6 +158,7 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
         }
 
         public boolean isAvailable() {
+            //当前时间已经超过了规避时间
             return (System.currentTimeMillis() - startTimestamp) >= 0;
         }
 

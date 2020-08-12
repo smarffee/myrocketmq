@@ -547,6 +547,15 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         return this.mqFaultStrategy.selectOneMessageQueue(tpInfo, lastBrokerName);
     }
 
+    /**
+     * 更新消息发送状态
+     *
+     * @param brokerName broker名称
+     * @param currentLatency 本次消息发送延迟时间currentLatency
+     * @param isolation 是否隔离。
+     *                  如果为true，则使用默认时长 30s 来计算 Broker 故障规避时长；
+     *                  如果为false，则使用本次消息发送延迟时间来计算Broker 故障规避时长。
+     */
     public void updateFaultItem(final String brokerName, final long currentLatency, boolean isolation) {
         this.mqFaultStrategy.updateFaultItem(brokerName, currentLatency, isolation);
     }
@@ -560,6 +569,19 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
     }
 
+    /**
+     * 发送消息
+     *
+     * @param msg
+     * @param communicationMode
+     * @param sendCallback
+     * @param timeout
+     * @return
+     * @throws MQClientException
+     * @throws RemotingException
+     * @throws MQBrokerException
+     * @throws InterruptedException
+     */
     private SendResult sendDefaultImpl(
         Message msg,
         final CommunicationMode communicationMode,
@@ -580,6 +602,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
 
         final long invokeID = random.nextLong();
+        //开始发送消息的时间
         long beginTimestampFirst = System.currentTimeMillis();
         long beginTimestampPrev = beginTimestampFirst;
         long endTimestamp = beginTimestampFirst;
@@ -602,31 +625,41 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
             //当前发送次数
             int times = 0;
+            //已经被选中发送消息的BrokerName，第几次发送选用的Broker
             String[] brokersSent = new String[timesTotal];
 
             for (; times < timesTotal; times++) {
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
 
-                //
+                //选择一个消息队列进行发送
                 MessageQueue mqSelected = this.selectOneMessageQueue(topicPublishInfo, lastBrokerName);
+
                 if (mqSelected != null) {
                     mq = mqSelected;
+                    //保存本次发送消息选用的BrokerName
                     brokersSent[times] = mq.getBrokerName();
                     try {
+                        //获取本次准备发送消息的时间
                         beginTimestampPrev = System.currentTimeMillis();
                         if (times > 0) {
                             //Reset topic with namespace during resend.
                             msg.setTopic(this.defaultMQProducer.withNamespace(msg.getTopic()));
                         }
+                        //计算发送消息一共耗时
                         long costTime = beginTimestampPrev - beginTimestampFirst;
+                        //如果超时
                         if (timeout < costTime) {
                             callTimeout = true;
                             break;
                         }
 
+                        //如果还没有超时，则进行发送消息
                         sendResult = this.sendKernelImpl(msg, mq, communicationMode, sendCallback, topicPublishInfo, timeout - costTime);
                         endTimestamp = System.currentTimeMillis();
+
+                        //更新消息发送状态
                         this.updateFaultItem(mq.getBrokerName(), endTimestamp - beginTimestampPrev, false);
+
                         switch (communicationMode) {
                             case ASYNC:
                                 return null;
