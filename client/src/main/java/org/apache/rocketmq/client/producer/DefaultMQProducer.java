@@ -167,8 +167,9 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @param customizedTraceTopic The name value of message trace topic.If you don't config,you can use the default
      * trace topic name.
      */
-    public DefaultMQProducer(final String producerGroup, RPCHook rpcHook, boolean enableMsgTrace,
-        final String customizedTraceTopic) {
+    public DefaultMQProducer(
+            final String producerGroup, RPCHook rpcHook, boolean enableMsgTrace, final String customizedTraceTopic) {
+
         this.producerGroup = producerGroup;
         defaultMQProducerImpl = new DefaultMQProducerImpl(this, rpcHook);
         //if client open the message trace feature
@@ -589,6 +590,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     @Override
     public void send(Message msg, MessageQueueSelector selector, Object arg, SendCallback sendCallback, long timeout)
         throws MQClientException, RemotingException, InterruptedException {
+
         msg.setTopic(withNamespace(msg.getTopic()));
         this.defaultMQProducerImpl.send(msg, selector, arg, sendCallback, timeout);
     }
@@ -926,26 +928,30 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     }
 
     @Override
-    public SendResult send(
-        Collection<Message> msgs) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Collection<Message> msgs)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return this.defaultMQProducerImpl.send(batch(msgs));
     }
 
     @Override
-    public SendResult send(Collection<Message> msgs,
-        long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Collection<Message> msgs, long timeout)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return this.defaultMQProducerImpl.send(batch(msgs), timeout);
     }
 
     @Override
-    public SendResult send(Collection<Message> msgs,
-        MessageQueue messageQueue) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Collection<Message> msgs, MessageQueue messageQueue)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return this.defaultMQProducerImpl.send(batch(msgs), messageQueue);
     }
 
     @Override
-    public SendResult send(Collection<Message> msgs, MessageQueue messageQueue,
-        long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Collection<Message> msgs, MessageQueue messageQueue, long timeout)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return this.defaultMQProducerImpl.send(batch(msgs), messageQueue, timeout);
     }
 

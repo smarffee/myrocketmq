@@ -98,8 +98,13 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     private final InternalLogger log = ClientLogger.getLog();
     private final Random random = new Random();
     private final DefaultMQProducer defaultMQProducer;
-    private final ConcurrentMap<String/* topic */, TopicPublishInfo> topicPublishInfoTable =
-        new ConcurrentHashMap<String, TopicPublishInfo>();
+
+    /**
+     * 此方法可以更新
+     * {@link MQClientInstance#updateTopicRouteInfoFromNameServer(java.lang.String, boolean, org.apache.rocketmq.client.producer.DefaultMQProducer)}
+     */
+    private final ConcurrentMap<String/* topic */, TopicPublishInfo> topicPublishInfoTable = new ConcurrentHashMap<String, TopicPublishInfo>();
+
     private final ArrayList<SendMessageHook> sendMessageHookList = new ArrayList<SendMessageHook>();
     private final RPCHook rpcHook;
     private final BlockingQueue<Runnable> asyncSenderThreadPoolQueue;
@@ -409,7 +414,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         this.checkExecutor.submit(request);
     }
 
-    //更新该 MQClientInstance 所管辖的所有消息发送关于topic的路由信息
+    //更新所有消息发送关于topic的路由信息
     @Override
     public void updateTopicPublishInfo(final String topic, final TopicPublishInfo info) {
         if (info != null && topic != null) {
@@ -784,18 +789,31 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         }
     }
 
-    private SendResult sendKernelImpl(final Message msg,
-        final MessageQueue mq,
-        final CommunicationMode communicationMode,
-        final SendCallback sendCallback,
-        final TopicPublishInfo topicPublishInfo,
-        final long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    /**
+     * 发送消息
+     * 发送消息核心API逻辑
+     */
+    private SendResult sendKernelImpl(
+            final Message msg, //待发送的消息
+            final MessageQueue mq, //消息将要发送的队列
+            final CommunicationMode communicationMode, //消息发送模式
+            final SendCallback sendCallback, //异步消息回调函数
+            final TopicPublishInfo topicPublishInfo, //主题路由信息
+            final long timeout //消息发送超时时间
+            ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
+
         long beginStartTime = System.currentTimeMillis();
+        //根据 MessageQueue 获取Broker 的网络地址
         String brokerAddr = this.mQClientFactory.findBrokerAddressInPublish(mq.getBrokerName());
         if (null == brokerAddr) {
+            //如果 MQClientInstance 的 brokerAddrTable 没有缓存该 Broker 地址信息
+            //则从NameServer 主动更新一下topic 的路由信息。
             tryToFindTopicPublishInfo(mq.getTopic());
             brokerAddr = this.mQClientFactory.findBrokerAddressInPublish(mq.getBrokerName());
         }
+
+        //如果路由更新后，还是找不到Broker， 则抛异常
 
         SendMessageContext context = null;
         if (brokerAddr != null) {
@@ -804,6 +822,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             byte[] prevBody = msg.getBody();
             try {
                 //for MessageBatch,ID has been set in the generating process
+                //为消息分配全局唯一ID
                 if (!(msg instanceof MessageBatch)) {
                     MessageClientIDSetter.setUniqID(msg);
                 }
@@ -816,13 +835,19 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
                 int sysFlag = 0;
                 boolean msgBodyCompressed = false;
+                /**
+                 * 如果消息体超过默认大小4K {@link org.apache.rocketmq.client.producer.DefaultMQProducer.compressMsgBodyOverHowmuch}
+                 * 会对消息体采用zip 压缩，
+                 */
                 if (this.tryToCompressMessage(msg)) {
+                    //设置消息的系统标记
                     sysFlag |= MessageSysFlag.COMPRESSED_FLAG;
                     msgBodyCompressed = true;
                 }
 
                 final String tranMsg = msg.getProperty(MessageConst.PROPERTY_TRANSACTION_PREPARED);
                 if (tranMsg != null && Boolean.parseBoolean(tranMsg)) {
+                    //如果是事务消息，设置消息的系统标记
                     sysFlag |= MessageSysFlag.TRANSACTION_PREPARED_TYPE;
                 }
 
@@ -838,6 +863,11 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     this.executeCheckForbiddenHook(checkForbiddenContext);
                 }
 
+                /**
+                 * 如果注册了消息发送钩子函数，则执行消息发送前的增强逻辑。
+                 * 通过{@link DefaultMQProducerImpl#registerSendMessageHook(org.apache.rocketmq.client.hook.SendMessageHook)}
+                 * 注册钩子函数
+                 */
                 if (this.hasSendMessageHook()) {
                     context = new SendMessageContext();
                     context.setProducer(this);
@@ -859,19 +889,34 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                     this.executeSendMessageHookBefore(context);
                 }
 
+                //构建消息发送请求包
                 SendMessageRequestHeader requestHeader = new SendMessageRequestHeader();
+                //生产组
                 requestHeader.setProducerGroup(this.defaultMQProducer.getProducerGroup());
+                //主题名称
                 requestHeader.setTopic(msg.getTopic());
+                //默认创建主题Key
                 requestHeader.setDefaultTopic(this.defaultMQProducer.getCreateTopicKey());
+                //该主题在单个broker默认队列数
                 requestHeader.setDefaultTopicQueueNums(this.defaultMQProducer.getDefaultTopicQueueNums());
+                //队列Id（队列序号）
                 requestHeader.setQueueId(mq.getQueueId());
+                //消息系统标记（MessageSysFlag）
                 requestHeader.setSysFlag(sysFlag);
+                //消息发送时间
                 requestHeader.setBornTimestamp(System.currentTimeMillis());
+                //消息标记（RocketMQ对消息中的Flag不做任何处理，供应用程序使用）
                 requestHeader.setFlag(msg.getFlag());
+                //消息拓展属性
                 requestHeader.setProperties(MessageDecoder.messageProperties2String(msg.getProperties()));
+                //消息重试次数
                 requestHeader.setReconsumeTimes(0);
+
                 requestHeader.setUnitMode(this.isUnitMode());
+
+                //是否是批量消息
                 requestHeader.setBatch(msg instanceof MessageBatch);
+
                 if (requestHeader.getTopic().startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
                     String reconsumeTimes = MessageAccessor.getReconsumeTime(msg);
                     if (reconsumeTimes != null) {
@@ -1024,6 +1069,10 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         return !this.sendMessageHookList.isEmpty();
     }
 
+    /**
+     * 消息发送前执行钩子函数
+     * @param context
+     */
     public void executeSendMessageHookBefore(final SendMessageContext context) {
         if (!this.sendMessageHookList.isEmpty()) {
             for (SendMessageHook hook : this.sendMessageHookList) {
