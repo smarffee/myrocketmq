@@ -157,6 +157,7 @@ public class MQClientInstance {
             MQVersion.getVersionDesc(MQVersion.CURRENT_VERSION), RemotingCommand.getSerializeTypeConfigInThisServer());
     }
 
+    //根据 topicRouteData 中的 List<QueueData> 转换成 topicPublishInfo 的 List<MessageQueue>
     public static TopicPublishInfo topicRouteData2TopicPublishInfo(final String topic, final TopicRouteData route) {
         TopicPublishInfo info = new TopicPublishInfo();
         info.setTopicRouteData(route);
@@ -175,26 +176,31 @@ public class MQClientInstance {
         } else {
             List<QueueData> qds = route.getQueueDatas();
             Collections.sort(qds);
+            //循环遍历路由信息的 QueueData 信息，
             for (QueueData qd : qds) {
+                //如果队列没有写权限，则继续遍历下一个 QueueData
                 if (PermName.isWriteable(qd.getPerm())) {
                     BrokerData brokerData = null;
                     for (BrokerData bd : route.getBrokerDatas()) {
+                        //根据brokerName 找到 brokerData
                         if (bd.getBrokerName().equals(qd.getBrokerName())) {
                             brokerData = bd;
                             break;
                         }
                     }
 
+                    //找不到或者没有找到Master　节点，则继续遍历下一个　QueueData
                     if (null == brokerData) {
                         continue;
                     }
-
                     if (!brokerData.getBrokerAddrs().containsKey(MixAll.MASTER_ID)) {
                         continue;
                     }
 
+                    //根据写队列个数，根据 topic+序号 创建MessageQueue
                     for (int i = 0; i < qd.getWriteQueueNums(); i++) {
                         MessageQueue mq = new MessageQueue(topic, qd.getBrokerName(), i);
+                        //填充 TopicPublishInfo 的 List<MessageQueue>
                         info.getMessageQueueList().add(mq);
                     }
                 }
@@ -505,6 +511,7 @@ public class MQClientInstance {
         }
     }
 
+    //向NameServer 查询该 topic 的路由信息
     public boolean updateTopicRouteInfoFromNameServer(final String topic) {
         return updateTopicRouteInfoFromNameServer(topic, false, null);
     }
@@ -602,15 +609,25 @@ public class MQClientInstance {
         }
     }
 
-    public boolean updateTopicRouteInfoFromNameServer(final String topic, boolean isDefault,
-        DefaultMQProducer defaultMQProducer) {
+    /**
+     *
+     * @param topic
+     * @param isDefault true:使用默认主题去查询
+     * @param defaultMQProducer
+     * @return
+     */
+    //向NameServer 查询该 topic 的路由信息
+    public boolean updateTopicRouteInfoFromNameServer(final String topic, boolean isDefault, DefaultMQProducer defaultMQProducer) {
         try {
             if (this.lockNamesrv.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                 try {
                     TopicRouteData topicRouteData;
+                    //isDefault 为 true，则使用默认主题去查询
                     if (isDefault && defaultMQProducer != null) {
-                        topicRouteData = this.mQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(defaultMQProducer.getCreateTopicKey(),
-                            1000 * 3);
+                        topicRouteData = this.mQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(
+                                defaultMQProducer.getCreateTopicKey(), 1000 * 3);
+
+                        //如果查询到路由信息，则替换路由信息中读写队列个数为消息生产者默认的队列个数（defaultTopicQueueNums）
                         if (topicRouteData != null) {
                             for (QueueData data : topicRouteData.getQueueDatas()) {
                                 int queueNums = Math.min(defaultMQProducer.getDefaultTopicQueueNums(), data.getReadQueueNums());
@@ -618,12 +635,21 @@ public class MQClientInstance {
                                 data.setWriteQueueNums(queueNums);
                             }
                         }
+
                     } else {
+                        //isDefault 为 false，则使用参数 topic 去查询，
                         topicRouteData = this.mQClientAPIImpl.getTopicRouteInfoFromNameServer(topic, 1000 * 3);
                     }
+
+                    // 如果没有查询到路由信息，则返回false，表示路由信息未发生变化
+
+                    // 如果找到路由信息
                     if (topicRouteData != null) {
+                        //与本地缓存的路由信息进行对比，判断路由信息是否发生了改变， 如果未发生改变，返回false
                         TopicRouteData old = this.topicRouteTable.get(topic);
                         boolean changed = topicRouteDataIsChange(old, topicRouteData);
+
+
                         if (!changed) {
                             changed = this.isNeedUpdateTopicRouteInfo(topic);
                         } else {
@@ -633,19 +659,23 @@ public class MQClientInstance {
                         if (changed) {
                             TopicRouteData cloneTopicRouteData = topicRouteData.cloneTopicRouteData();
 
+                            //更新 MQClientInstance Broker 地址缓存表
                             for (BrokerData bd : topicRouteData.getBrokerDatas()) {
                                 this.brokerAddrTable.put(bd.getBrokerName(), bd.getBrokerAddrs());
                             }
 
                             // Update Pub info
                             {
+                                //根据 topicRouteData 中的 List<QueueData> 转换成 topicPublishInfo 的 List<MessageQueue>
                                 TopicPublishInfo publishInfo = topicRouteData2TopicPublishInfo(topic, topicRouteData);
                                 publishInfo.setHaveTopicRouterInfo(true);
+                                //更新该MQClientInstance 所管辖的所有消息发送关于topic的路由信息
                                 Iterator<Entry<String, MQProducerInner>> it = this.producerTable.entrySet().iterator();
                                 while (it.hasNext()) {
                                     Entry<String, MQProducerInner> entry = it.next();
                                     MQProducerInner impl = entry.getValue();
                                     if (impl != null) {
+                                        //更新该MQClientInstance 所管辖的所有消息发送关于topic的路由信息
                                         impl.updateTopicPublishInfo(topic, publishInfo);
                                     }
                                 }

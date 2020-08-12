@@ -35,6 +35,7 @@ public interface MQProducerInner {
         final MessageExt msg,
         final CheckTransactionStateRequestHeader checkRequestHeader);
 
+    //更新该MQClientInstance 所管辖的所有消息发送关于topic的路由信息
     void updateTopicPublishInfo(final String topic, final TopicPublishInfo info);
 
     boolean isUnitMode();

@@ -409,6 +409,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         this.checkExecutor.submit(request);
     }
 
+    //更新该 MQClientInstance 所管辖的所有消息发送关于topic的路由信息
     @Override
     public void updateTopicPublishInfo(final String topic, final TopicPublishInfo info) {
         if (info != null && topic != null) {
@@ -535,6 +536,13 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
     }
 
+    /**
+     * 从 TopicPublishInfo 中选择一个队列
+     *
+     * @param tpInfo
+     * @param lastBrokerName 上次选择的执行发送消息失败的 Broker。第一次发送的时候，为null
+     * @return
+     */
     public MessageQueue selectOneMessageQueue(final TopicPublishInfo tpInfo, final String lastBrokerName) {
         return this.mqFaultStrategy.selectOneMessageQueue(tpInfo, lastBrokerName);
     }
@@ -558,6 +566,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         final SendCallback sendCallback,
         final long timeout
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         this.makeSureStateOK();
 
         /**
@@ -583,11 +592,22 @@ public class DefaultMQProducerImpl implements MQProducerInner {
             MessageQueue mq = null;
             Exception exception = null;
             SendResult sendResult = null;
+
+            /**
+             * 发送的总次数
+             * 同步： 1 + 重试次数
+             * 异步： 就1次
+             */
             int timesTotal = communicationMode == CommunicationMode.SYNC ? 1 + this.defaultMQProducer.getRetryTimesWhenSendFailed() : 1;
+
+            //当前发送次数
             int times = 0;
             String[] brokersSent = new String[timesTotal];
+
             for (; times < timesTotal; times++) {
                 String lastBrokerName = null == mq ? null : mq.getBrokerName();
+
+                //
                 MessageQueue mqSelected = this.selectOneMessageQueue(topicPublishInfo, lastBrokerName);
                 if (mqSelected != null) {
                     mq = mqSelected;
@@ -1312,8 +1332,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
     /**
      * DEFAULT SYNC -------------------------------------------------------
      */
-    public SendResult send(
-        Message msg) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Message msg)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return send(msg, this.defaultMQProducer.getSendMsgTimeout());
     }
 
@@ -1366,8 +1387,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
         this.asyncSenderExecutor = asyncSenderExecutor;
     }
 
-    public SendResult send(Message msg,
-        long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+    public SendResult send(Message msg, long timeout)
+            throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
+
         return this.sendDefaultImpl(msg, CommunicationMode.SYNC, null, timeout);
     }
 

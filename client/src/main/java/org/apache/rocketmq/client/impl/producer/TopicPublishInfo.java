@@ -73,6 +73,11 @@ public class TopicPublishInfo {
         this.haveTopicRouterInfo = haveTopicRouterInfo;
     }
 
+    /**
+     * 选择一个 MessageQueue消息队列
+     * @param lastBrokerName 上一次执行发送消息失败的 Broker。 第一次发送的时候，为null
+     * @return
+     */
     public MessageQueue selectOneMessageQueue(final String lastBrokerName) {
         if (lastBrokerName == null) {
             return selectOneMessageQueue();
@@ -83,6 +88,7 @@ public class TopicPublishInfo {
                 if (pos < 0)
                     pos = 0;
                 MessageQueue mq = this.messageQueueList.get(pos);
+                //规避上一次发送失败的 Broker，否则的话，还可能会失败
                 if (!mq.getBrokerName().equals(lastBrokerName)) {
                     return mq;
                 }
