@@ -27,6 +27,8 @@ public interface AppendMessageCallback {
     /**
      * After message serialization, write MapedByteBuffer
      *
+     * 开始追加消息
+     *
      * @return How many bytes to write
      */
     AppendMessageResult doAppend(final long fileFromOffset, final ByteBuffer byteBuffer,
@@ -34,6 +36,8 @@ public interface AppendMessageCallback {
 
     /**
      * After batched message serialization, write MapedByteBuffer
+     *
+     * //开始追加消息
      *
      * @param messageExtBatch, backed up by a byte array
      * @return How many bytes to write

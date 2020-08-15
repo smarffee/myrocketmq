@@ -29,21 +29,40 @@ import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 
+/**
+ * CommitLog 文件存储目录为 ${ROCKET_HOME}/store/commitlog 目录
+ * 每一个文件默认大小为 1G，一个文件写满以后，则创建另外一个，
+ * 以该文件中第一个偏移量为文件名，偏移量小于20位用0补齐。
+ * 这样可以快速定位到消息。
+ *
+ *
+ * MappedFileQueue 可以看作是 ${ROCKET_HOMT}/store/commitlog 文件夹，
+ * MappedFile 则对应该文件夹下一个个文件
+ *
+ * MappedFileQueue 是 MappedFile 管理容器，是对存储目录的封装
+ */
 public class MappedFileQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     private static final InternalLogger LOG_ERROR = InternalLoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
     private static final int DELETE_FILES_BATCH_MAX = 10;
 
+    //存储目录
     private final String storePath;
 
+    //单个文件存储大小
     private final int mappedFileSize;
 
+    //MappedFile 文件集合
     private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<MappedFile>();
 
+    //创建 MappedFile 的服务类
     private final AllocateMappedFileService allocateMappedFileService;
 
+    //当前刷盘指针，表示该指针之前的所有数据全部持久化到磁盘
     private long flushedWhere = 0;
+
+    //当前数据提交指针，内存中 ByteBuffer 当前的写指针，该值大于等于 flushedWhere
     private long committedWhere = 0;
 
     private volatile long storeTimestamp = 0;
@@ -74,12 +93,19 @@ public class MappedFileQueue {
         }
     }
 
+    /**
+     * 根据消息存储时间戳来查找 MapperFile。
+     * @param timestamp
+     * @return
+     */
     public MappedFile getMappedFileByTime(final long timestamp) {
         Object[] mfs = this.copyMappedFiles(0);
 
         if (null == mfs)
             return null;
 
+        //从 mappedFiles 列表中第一个文件开始查找，找到第一个最后一次更新时间大于待查找时间戳的文件
+        //如果不存在则返回最后一个 mappedFile
         for (int i = 0; i < mfs.length; i++) {
             MappedFile mappedFile = (MappedFile) mfs[i];
             if (mappedFile.getLastModifiedTimestamp() >= timestamp) {
@@ -191,6 +217,19 @@ public class MappedFileQueue {
         return 0;
     }
 
+    /**
+     * Commitlog 文件存储目录为 ${ROCKET_HOMT}/store/commitlog 目录
+     * 每一个文件默认大小为 1G，一个文件写满以后，则创建另外一个，
+     * 以该文件中第一个偏移量为文件名，偏移量小于20位用0补齐。
+     * 这样可以快速定位到消息。
+     *
+     * MappedFileQueue 可以看作是 ${ROCKET_HOME}/store/commitlog 文件夹，
+     * MappedFile 则对应该文件夹下一个个文件
+     *
+     * @param startOffset
+     * @param needCreate
+     * @return
+     */
     public MappedFile getLastMappedFile(final long startOffset, boolean needCreate) {
         long createOffset = -1;
         MappedFile mappedFileLast = getLastMappedFile();
@@ -237,6 +276,10 @@ public class MappedFileQueue {
         return getLastMappedFile(startOffset, true);
     }
 
+    /**
+     * 获取最后的一个文件
+     * @return
+     */
     public MappedFile getLastMappedFile() {
         MappedFile mappedFileLast = null;
 
@@ -285,6 +328,11 @@ public class MappedFileQueue {
         return true;
     }
 
+    /**
+     * 获取存储文件最小偏移量
+     *
+     * @return
+     */
     public long getMinOffset() {
 
         if (!this.mappedFiles.isEmpty()) {
@@ -299,6 +347,10 @@ public class MappedFileQueue {
         return -1;
     }
 
+    /**
+     * 获取存储文件的最大偏移量
+     * @return
+     */
     public long getMaxOffset() {
         MappedFile mappedFile = getLastMappedFile();
         if (mappedFile != null) {
@@ -307,6 +359,10 @@ public class MappedFileQueue {
         return 0;
     }
 
+    /**
+     * 返回存储文件当前的写指针
+     * @return
+     */
     public long getMaxWrotePosition() {
         MappedFile mappedFile = getLastMappedFile();
         if (mappedFile != null) {
@@ -454,6 +510,8 @@ public class MappedFileQueue {
 
     /**
      * Finds a mapped file by offset.
+     *
+     * 根据消息偏移量 offset 查找 MappedFile。
      *
      * @param offset Offset.
      * @param returnFirstOnNotFound If the mapped file is not found, then return the first one.
