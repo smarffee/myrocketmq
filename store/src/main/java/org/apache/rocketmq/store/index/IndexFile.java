@@ -27,11 +27,17 @@ import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.MappedFile;
 
+/**
+ * 为消息订阅构建的索引文件
+ * 提高主题与消息队列检索消息的速度
+ * 引入Hash所以机制为消息建立索引
+ */
 public class IndexFile {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     private static int hashSlotSize = 4;
     private static int indexSize = 20;
     private static int invalidIndex = 0;
+
     private final int hashSlotNum;
     private final int indexNum;
     private final MappedFile mappedFile;

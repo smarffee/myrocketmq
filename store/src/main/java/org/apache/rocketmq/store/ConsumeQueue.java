@@ -25,6 +25,12 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * 如果从所有的commitlog中查找分布在多个文件中的同一个主题的消息，则遍历查找，效率会很低
+ * 为了适应消息消费检索的需求，设计了消息消费队列文件（ConsumeQueue）
+ * 该文件可以看作是消息消费的“索引”文件
+ * ConsumeQueue的第一级目录为消息主题，第二季目录为主题的消息队列
+ */
 public class ConsumeQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
